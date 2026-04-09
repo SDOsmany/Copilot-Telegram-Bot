@@ -695,4 +695,139 @@ export function registerSessionCommands(
 
   bot.command('new_chat', handleNewChat);
   bot.command('reset', handleNewChat);
+
+  // ── /sessions — List previous SDK sessions to resume ──
+  bot.command('sessions', async (ctx) => {
+    const telegramId = String(ctx.from?.id ?? '');
+    const user = userState.getOrCreate(telegramId, ctx.from?.username);
+    const cwd = userState.getCurrentCwd(user.id);
+
+    await ctx.reply(i18n.t(user.id, 'commands.sessions.loading'), { parse_mode: 'HTML' });
+
+    try {
+      const sessions = await sessionManager.listCopilotSessions();
+
+      if (sessions.length === 0) {
+        await ctx.reply(i18n.t(user.id, 'commands.sessions.empty'));
+        return;
+      }
+
+      // Show most recent 10 sessions
+      const recent = sessions
+        .sort((a, b) => b.modifiedTime.getTime() - a.modifiedTime.getTime())
+        .slice(0, 10);
+
+      const lines = [i18n.t(user.id, 'commands.sessions.title'), ''];
+      const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
+
+      for (const s of recent) {
+        const summary = s.summary || i18n.t(user.id, 'commands.sessions.noSummary');
+        const date = s.modifiedTime.toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
+        const cwdShort = s.context?.cwd
+          ? s.context.cwd.split(/[\\/]/).slice(-2).join('/')
+          : '';
+
+        lines.push(`• <b>${escapeHtml(summary)}</b>`);
+        lines.push(`  📅 ${date}${cwdShort ? ` · 📂 ${escapeHtml(cwdShort)}` : ''}`);
+        lines.push('');
+
+        buttons.push([{
+          text: `📂 ${summary.slice(0, 30)}`,
+          callback_data: generateCallbackData('resume_session', s.sessionId.slice(0, 8)),
+        }]);
+      }
+
+      lines.push(i18n.t(user.id, 'commands.sessions.selectToResume'));
+
+      await ctx.reply(lines.join('\n'), {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: buttons },
+      });
+    } catch (error: any) {
+      logger.error('Error listing sessions', { error: error.message });
+      await ctx.reply(
+        i18n.t(user.id, 'commands.sessions.error', { error: sanitizeErrorForUser(error) }),
+        { parse_mode: 'HTML' }
+      );
+    }
+  });
+
+  // ── /resume [session_id] — Resume a specific session by ID ──
+  bot.command('resume', async (ctx) => {
+    const telegramId = String(ctx.from?.id ?? '');
+    const user = userState.getOrCreate(telegramId, ctx.from?.username);
+    const sessionIdArg = ctx.message?.text?.split(' ').slice(1).join(' ').trim() ?? '';
+
+    if (!sessionIdArg) {
+      // No argument — show session list like /sessions
+      await ctx.reply('Usage: /resume [session_id]\n\nOr use /sessions to browse and select.');
+      return;
+    }
+
+    if (sessionManager.isBusy(telegramId)) {
+      await ctx.reply(i18n.t(user.id, 'messageHandler.operationInProgress'));
+      return;
+    }
+
+    await resumeSessionById(ctx, telegramId, user, sessionIdArg);
+  });
+
+  /**
+   * Resumes a session by its full or partial SDK session ID
+   */
+  async function resumeSessionById(ctx: any, telegramId: string, user: any, partialId: string) {
+    try {
+      const allSessions = await sessionManager.listCopilotSessions();
+      const match = allSessions.find(s => s.sessionId.startsWith(partialId));
+
+      if (!match) {
+        await ctx.reply(i18n.t(user.id, 'commands.sessions.resumeNotFound'), { parse_mode: 'HTML' });
+        return;
+      }
+
+      sessionManager.setBusy(telegramId, true);
+
+      const cwd = match.context?.cwd || userState.getCurrentCwd(user.id);
+      const model = userState.getCurrentModel(user.id);
+
+      // Abort any existing operations
+      sessionManager.abortInFlight(telegramId);
+      sessionManager.clearAborter(telegramId);
+      tools.askUser.cancel();
+
+      const activePath = sessionManager.getActiveProjectPath(telegramId);
+      if (activePath) {
+        await sessionManager.destroySession(telegramId, activePath);
+      }
+
+      await sessionManager.resumeSession(telegramId, match.sessionId, cwd, {
+        model,
+        tools: tools.all,
+        mcpServers: mcpRegistry.getEnabled(),
+        onUserInputRequest: tools.userInputHandler,
+      });
+
+      // Update user's cwd to match the resumed session
+      userState.setCurrentCwd(user.id, cwd);
+
+      const summary = match.summary || i18n.t(user.id, 'commands.sessions.noSummary');
+      await ctx.reply(
+        i18n.t(user.id, 'commands.sessions.resumed', {
+          summary: escapeHtml(summary),
+          cwd: escapeHtml(cwd),
+        }),
+        { parse_mode: 'HTML' }
+      );
+    } catch (error: any) {
+      logger.error('Error resuming session', { telegramId, partialId, error: error.message });
+      await ctx.reply(
+        i18n.t(user.id, 'commands.sessions.resumeError', { error: sanitizeErrorForUser(error) }),
+        { parse_mode: 'HTML' }
+      );
+    } finally {
+      sessionManager.setBusy(telegramId, false);
+    }
+  }
 }

@@ -269,6 +269,94 @@ export function registerCallbacks(
     }
   });
 
+  // ── Resume session callback ──
+  bot.callbackQuery(/^resume_session:(.+)$/, async (ctx) => {
+    const callbackData = ctx.callbackQuery?.data ?? ctx.match?.[0] ?? '';
+    const telegramId = String(ctx.from?.id ?? '');
+    const user = userState.getOrCreate(telegramId, ctx.from?.username);
+
+    if (!isCallbackValid(callbackData)) {
+      await ctx.answerCallbackQuery(i18n.t(user.id, 'callbacks.requestExpired'));
+      return;
+    }
+
+    if (sessionManager.isBusy(telegramId)) {
+      await ctx.answerCallbackQuery(i18n.t(user.id, 'callbacks.operationInProgress'));
+      return;
+    }
+
+    const { data: partialId } = extractCallbackParts(callbackData);
+
+    try {
+      const allSessions = await sessionManager.listCopilotSessions();
+      const match = allSessions.find(s => s.sessionId.startsWith(partialId));
+
+      if (!match) {
+        await ctx.answerCallbackQuery(i18n.t(user.id, 'commands.sessions.resumeNotFound'));
+        return;
+      }
+
+      sessionManager.setBusy(telegramId, true);
+      await ctx.answerCallbackQuery('⏳ Resuming...');
+
+      const cwd = match.context?.cwd || userState.getCurrentCwd(user.id);
+      const model = userState.getCurrentModel(user.id);
+
+      // Clean up existing session
+      sessionManager.abortInFlight(telegramId);
+      sessionManager.clearAborter(telegramId);
+      tools.askUser.cancel();
+
+      const activePath = sessionManager.getActiveProjectPath(telegramId);
+      if (activePath) {
+        await sessionManager.destroySession(telegramId, activePath);
+      }
+
+      await sessionManager.resumeSession(telegramId, match.sessionId, cwd, {
+        model,
+        tools: tools.all,
+        mcpServers: mcpRegistry.getEnabled(),
+      });
+
+      userState.setCurrentCwd(user.id, cwd);
+
+      const summary = match.summary || i18n.t(user.id, 'commands.sessions.noSummary');
+
+      // Update the message to show which session was selected
+      try {
+        await ctx.editMessageText(
+          i18n.t(user.id, 'commands.sessions.resumed', {
+            summary: escapeHtml(summary),
+            cwd: escapeHtml(cwd),
+          }),
+          { parse_mode: 'HTML' }
+        );
+      } catch {
+        await ctx.reply(
+          i18n.t(user.id, 'commands.sessions.resumed', {
+            summary: escapeHtml(summary),
+            cwd: escapeHtml(cwd),
+          }),
+          { parse_mode: 'HTML' }
+        );
+      }
+    } catch (error: any) {
+      logger.error('Error resuming session via callback', {
+        telegramId,
+        partialId,
+        error: error.message,
+      });
+      await ctx.reply(
+        i18n.t(user.id, 'commands.sessions.resumeError', {
+          error: escapeHtml(error.message || 'Unknown error'),
+        }),
+        { parse_mode: 'HTML' }
+      );
+    } finally {
+      sessionManager.setBusy(telegramId, false);
+    }
+  });
+
   bot.callbackQuery(/^allowpath_(confirm|cancel):(.+)$/, async (ctx) => {
     const callbackData = ctx.callbackQuery?.data ?? ctx.match?.[0] ?? '';
     const telegramIdNum = ctx.from?.id;

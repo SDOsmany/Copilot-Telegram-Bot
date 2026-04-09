@@ -104,6 +104,8 @@ export function registerInfoCommands(
       i18n.t(user.id, 'commands.help.commands.extend'),
       i18n.t(user.id, 'commands.help.commands.new_chat'),
       i18n.t(user.id, 'commands.help.commands.reset'),
+      i18n.t(user.id, 'commands.help.commands.sessions'),
+      i18n.t(user.id, 'commands.help.commands.resume'),
     ];
     
     await ctx.reply([title, '', ...commands].join('\n'), { parse_mode: 'HTML' });

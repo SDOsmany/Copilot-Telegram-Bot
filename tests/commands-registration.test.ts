@@ -103,6 +103,8 @@ describe('Command Registration', () => {
     'showplan',
     'editplan',
     'exportplan',
+    'sessions',
+    'resume',
     
     // Language commands (commands-language.ts)
     'language',

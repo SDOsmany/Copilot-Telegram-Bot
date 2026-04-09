@@ -54,7 +54,9 @@
         "extend": "/extend - Extend operation timeout",
         "new_chat": "/new_chat - Start a clean chat session",
         "reset": "/reset - Alias for /new_chat",
-        "language": "/language - Change bot language"
+        "language": "/language - Change bot language",
+        "sessions": "/sessions - List previous chat sessions to resume",
+        "resume": "/resume - Resume a previous chat session"
       }
     },
     "status": {
@@ -128,6 +130,17 @@
         "cancelled": "cancelled",
         "interrupted": "interrupted"
       }
+    },
+    "sessions": {
+      "title": "📋 <b>Previous Chat Sessions</b>",
+      "loading": "⏳ Loading sessions...",
+      "empty": "ℹ️ No previous sessions found.",
+      "selectToResume": "\nTap a session to resume it:",
+      "error": "❌ Error loading sessions: {{error}}",
+      "resumed": "✅ Session resumed: <b>{{summary}}</b>\n\n📂 <code>{{cwd}}</code>\n\nYou can continue the conversation where you left off.",
+      "resumeError": "❌ Error resuming session: {{error}}",
+      "resumeNotFound": "❌ Session not found. It may have been deleted.",
+      "noSummary": "(untitled session)"
     }
   },
   "errors": {
