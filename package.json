@@ -58,7 +58,7 @@
     "prepublishOnly": "npm run build && npm run lint && npm test"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^0.1.10",
+    "@github/copilot-sdk": "^0.2.1",
     "@grammyjs/runner": "^2.0.3",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.0.0",

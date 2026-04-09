@@ -1,4 +1,4 @@
-import { CopilotClient, CopilotSession, Tool, MCPServerConfig } from '@github/copilot-sdk';
+import { CopilotClient, CopilotSession, Tool, MCPServerConfig, approveAll } from '@github/copilot-sdk';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { sanitizeForLogging } from '../utils/sanitize';
@@ -138,6 +138,7 @@ export class SessionManager {
       streaming: true,
       workingDirectory: projectPath,
       tools: options.tools,
+      onPermissionRequest: approveAll,
       ...(options.systemMessage ? { systemMessage: options.systemMessage } : {}),
       ...(options.mcpServers ? { mcpServers: options.mcpServers } : {}),
       ...(options.onUserInputRequest ? { onUserInputRequest: options.onUserInputRequest } : {}),
@@ -269,6 +270,96 @@ export class SessionManager {
    */
   async clearAll(): Promise<void> {
     await this.destroyAll();
+  }
+
+  /**
+   * Resumes a previous Copilot session by its SDK session ID
+   * @param userId - User identifier
+   * @param sdkSessionId - The SDK session ID to resume
+   * @param projectPath - Project path to associate the resumed session with
+   * @param options - Session configuration options
+   * @returns Resumed Copilot session
+   */
+  async resumeSession(
+    userId: string,
+    sdkSessionId: string,
+    projectPath: string,
+    options: SessionOptions
+  ): Promise<CopilotSession> {
+    const user = this.getUserSessions(userId);
+
+    // Destroy existing session for this project if any
+    const existing = user.sessions.get(projectPath);
+    if (existing) {
+      logger.info('Destroying existing session before resume', {
+        userId,
+        projectPath,
+      });
+      await existing.session.destroy();
+      user.sessions.delete(projectPath);
+    }
+
+    logger.info('Resuming SDK session', sanitizeForLogging({
+      userId,
+      sdkSessionId,
+      projectPath,
+      model: options.model,
+    }));
+
+    const session = await this.client.resumeSession(sdkSessionId, {
+      model: options.model,
+      streaming: true,
+      workingDirectory: projectPath,
+      tools: options.tools,
+      onPermissionRequest: approveAll,
+      ...(options.mcpServers ? { mcpServers: options.mcpServers } : {}),
+      ...(options.onUserInputRequest ? { onUserInputRequest: options.onUserInputRequest } : {}),
+      ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
+      infiniteSessions: { enabled: true },
+    });
+
+    user.sessions.set(projectPath, {
+      session,
+      createdAt: new Date(),
+      options,
+    });
+    user.activeProject = projectPath;
+
+    logger.info('Session resumed successfully', {
+      userId,
+      sdkSessionId,
+      projectPath,
+    });
+
+    return session;
+  }
+
+  /**
+   * Lists all persistent Copilot sessions from the SDK
+   * @param cwd - Optional working directory filter
+   * @returns Array of SDK session metadata
+   */
+  async listCopilotSessions(cwd?: string): Promise<Array<{
+    sessionId: string;
+    summary?: string;
+    startTime: Date;
+    modifiedTime: Date;
+    context?: { cwd?: string; repository?: string; branch?: string };
+  }>> {
+    try {
+      const filter = cwd ? { cwd } : undefined;
+      const sessions = await this.client.listSessions(filter);
+      return sessions.map((s: any) => ({
+        sessionId: s.sessionId,
+        summary: s.summary,
+        startTime: new Date(s.startTime),
+        modifiedTime: new Date(s.modifiedTime),
+        context: s.context,
+      }));
+    } catch (error: any) {
+      logger.error('Failed to list Copilot sessions', { error: error.message });
+      return [];
+    }
   }
 
   /**
