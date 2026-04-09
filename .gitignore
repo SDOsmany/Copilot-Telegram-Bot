@@ -118,3 +118,6 @@ bower_components/
 *.tgz
 
 baseline/
+
+# Local Copilot instructions (not for upstream)
+.github/copilot-instructions.md
