@@ -739,6 +739,12 @@ export function registerSessionCommands(
         }]);
       }
 
+      // Add cancel button at the bottom
+      buttons.push([{
+        text: '❌ Cancel',
+        callback_data: generateCallbackData('sessions_cancel', 'cancel'),
+      }]);
+
       lines.push(i18n.t(user.id, 'commands.sessions.selectToResume'));
 
       await ctx.reply(lines.join('\n'), {

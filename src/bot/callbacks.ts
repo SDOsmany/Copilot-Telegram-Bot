@@ -13,6 +13,11 @@ import { AddProjectWizard } from './wizard-addproject';
 import { i18n } from '../i18n/index.js';
 import { getAvailableModelIds } from './model-catalog';
 import {
+  generateNavigationKeyboard,
+  generateNavigationMessage,
+  readDirectories,
+} from './wizard-utils';
+import {
   addAllowedPathAndRestart,
   consumeAllowPathRequest,
   isAdminUser,
@@ -357,6 +362,16 @@ export function registerCallbacks(
     }
   });
 
+  // ── Sessions cancel callback ──
+  bot.callbackQuery(/^sessions_cancel:(.+)$/, async (ctx) => {
+    try {
+      await ctx.editMessageText('ℹ️ Session list dismissed.', { parse_mode: 'HTML' });
+    } catch {
+      // Message may be too old to edit
+    }
+    await ctx.answerCallbackQuery();
+  });
+
   bot.callbackQuery(/^allowpath_(confirm|cancel):(.+)$/, async (ctx) => {
     const callbackData = ctx.callbackQuery?.data ?? ctx.match?.[0] ?? '';
     const telegramIdNum = ctx.from?.id;
@@ -437,11 +452,50 @@ export function registerCallbacks(
           reply_markup: result.keyboard,
         });
         await ctx.answerCallbackQuery();
-      } else {
-        await ctx.answerCallbackQuery(result.message);
-        if (!result.success) {
+      } else if (!result.success) {
+        // Navigation failed (e.g., path not allowed) — show error with
+        // the previous keyboard so the user can still cancel or go elsewhere
+        const status = wizard.getStatus(telegramIdNum);
+        if (status) {
+          const keyboard = generateNavigationKeyboard({
+            directories: [],
+            page: 0,
+            currentPath: status.currentPath,
+            callbackPrefix: 'cd',
+            showConfirmButton: true,
+            confirmButtonText: '✅ Confirmar',
+          });
+          // Re-read directories for current (valid) path
+          const readResult = await readDirectories(status.currentPath);
+          if (readResult.success) {
+            const fullKeyboard = generateNavigationKeyboard({
+              directories: readResult.directories,
+              page: status.page,
+              currentPath: status.currentPath,
+              callbackPrefix: 'cd',
+              showConfirmButton: true,
+              confirmButtonText: '✅ Confirmar',
+            });
+            const errorMsg = `⚠️ ${result.message}\n\n` + generateNavigationMessage(
+              telegramIdNum,
+              status.currentPath,
+              readResult.directories,
+              status.page
+            );
+            await ctx.editMessageText(errorMsg, {
+              parse_mode: 'HTML',
+              reply_markup: fullKeyboard,
+            });
+          } else {
+            await ctx.editMessageText(`⚠️ ${result.message}`, {
+              parse_mode: 'HTML',
+              reply_markup: keyboard,
+            });
+          }
+        } else {
           await ctx.editMessageText(result.message, { parse_mode: 'HTML' });
         }
+        await ctx.answerCallbackQuery(result.message);
       }
     } catch (error: any) {
       logger.error('Error in CD wizard navigation callback', {
