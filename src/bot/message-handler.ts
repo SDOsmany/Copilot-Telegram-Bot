@@ -1,7 +1,7 @@
 import { Bot, Context } from 'grammy';
 import { CopilotSession } from '@github/copilot-sdk';
 import { config, isPathAllowed } from '../config';
-import { splitMessage } from '../utils/message-splitter';
+import { splitMessage, splitHtmlMessage } from '../utils/message-splitter';
 import { formatForTelegram, escapeHtml } from '../utils/formatter';
 import { SessionManager } from '../copilot/session-manager';
 import { UserState } from '../state/user-state';
@@ -833,12 +833,12 @@ async function sendPromptWithStreaming(
             totalExtensionMs: totalExtension,
           });
           
-          const parts = splitMessage(buffer, TELEGRAM_MAX_MESSAGE_LENGTH);
+          const formattedHtml = formatForTelegram(buffer);
           const doneMessage = i18n.t(Number(userId), 'bot.done');
           const safeParts =
-            parts.length === 0
+            !formattedHtml
               ? [doneMessage]
-              : parts.map((part) => formatForTelegram(part));
+              : splitHtmlMessage(formattedHtml, TELEGRAM_MAX_MESSAGE_LENGTH);
           
           // Add enhanced completion message footer
           const elapsedSeconds = Math.floor(elapsedMs / ONE_SECOND_MS);
@@ -881,11 +881,22 @@ async function sendPromptWithStreaming(
                try {
                  await bot.api.sendMessage(chatId, safeParts[i], { parse_mode: 'HTML' });
                } catch (error: any) {
-                 logger.warn('Failed to send message part', {
+                 logger.warn('Failed to send HTML message part, retrying as plain text', {
                    chatId,
                    partIndex: i,
                    error: error.message,
                  });
+                 try {
+                   // Fallback: strip HTML tags and send as plain text
+                   const plainText = safeParts[i].replace(/<[^>]+>/g, '');
+                   await bot.api.sendMessage(chatId, plainText || '(empty message part)');
+                 } catch (fallbackError: any) {
+                   logger.error('Failed to send plain text fallback', {
+                     chatId,
+                     partIndex: i,
+                     error: fallbackError.message,
+                   });
+                 }
                }
              }
            };

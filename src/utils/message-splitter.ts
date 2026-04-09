@@ -1,4 +1,4 @@
-import { TELEGRAM_MAX_MESSAGE_LENGTH } from '../constants';
+import { TELEGRAM_MAX_MESSAGE_LENGTH, MAX_MESSAGE_PARTS } from '../constants';
 
 /**
  * Splits a long line into chunks of maximum length.
@@ -90,6 +90,7 @@ function splitTextSegment(segment: string, maxLength: number): string[] {
 /**
  * Splits a long message into multiple chunks respecting Telegram's length limits.
  * Preserves code blocks and paragraph boundaries.
+ * Operates on raw Markdown text.
  * 
  * @param text - The text to split
  * @param maxLength - Maximum length per message chunk
@@ -141,5 +142,103 @@ export function splitMessage(text: string, maxLength = TELEGRAM_MAX_MESSAGE_LENG
   }
 
   if (current.length > 0) result.push(current);
+  return result;
+}
+
+/**
+ * Finds open HTML tags that haven't been closed yet.
+ * Returns the tag names in order so they can be re-opened in the next chunk.
+ */
+function findUnclosedTags(html: string): string[] {
+  const openTags: string[] = [];
+  const tagRegex = /<\/?([a-z]+)[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = tagRegex.exec(html)) !== null) {
+    const fullMatch = m[0];
+    const tagName = m[1].toLowerCase();
+    if (fullMatch.startsWith('</')) {
+      // Closing tag — pop the last matching open tag
+      const idx = openTags.lastIndexOf(tagName);
+      if (idx !== -1) openTags.splice(idx, 1);
+    } else if (!fullMatch.endsWith('/>')) {
+      openTags.push(tagName);
+    }
+  }
+  return openTags;
+}
+
+/**
+ * Splits already-formatted HTML text into chunks that respect Telegram's
+ * message length limit. Ensures HTML tags are properly closed/reopened
+ * across chunk boundaries.
+ *
+ * @param html - The HTML-formatted text to split
+ * @param maxLength - Maximum length per message chunk (default: Telegram's 4096)
+ * @returns Array of self-contained HTML chunks, capped at MAX_MESSAGE_PARTS
+ */
+export function splitHtmlMessage(html: string, maxLength = TELEGRAM_MAX_MESSAGE_LENGTH): string[] {
+  if (html.length <= maxLength) return [html];
+
+  const result: string[] = [];
+  let remaining = html;
+
+  while (remaining.length > 0 && result.length < MAX_MESSAGE_PARTS) {
+    if (remaining.length <= maxLength) {
+      result.push(remaining);
+      break;
+    }
+
+    // Reserve space for closing tags we might need to add
+    // Worst case: a few nested tags like </code></pre></b></i> ≈ ~50 chars
+    const safeLimit = maxLength - 60;
+
+    // Find a good split point: prefer splitting at paragraph/line boundaries
+    let splitAt = safeLimit;
+
+    // Try to split at a double newline (paragraph break)
+    const doubleNewline = remaining.lastIndexOf('\n\n', safeLimit);
+    if (doubleNewline > safeLimit * 0.5) {
+      splitAt = doubleNewline;
+    } else {
+      // Try single newline
+      const singleNewline = remaining.lastIndexOf('\n', safeLimit);
+      if (singleNewline > safeLimit * 0.5) {
+        splitAt = singleNewline;
+      } else {
+        // Try space
+        const space = remaining.lastIndexOf(' ', safeLimit);
+        if (space > safeLimit * 0.3) {
+          splitAt = space;
+        }
+      }
+    }
+
+    let chunk = remaining.slice(0, splitAt);
+    remaining = remaining.slice(splitAt);
+
+    // Close any unclosed tags in this chunk
+    const unclosed = findUnclosedTags(chunk);
+    for (let i = unclosed.length - 1; i >= 0; i--) {
+      chunk += `</${unclosed[i]}>`;
+    }
+
+    result.push(chunk);
+
+    // Re-open tags for the next chunk
+    if (remaining.length > 0 && unclosed.length > 0) {
+      const reopenPrefix = unclosed.map((tag) => `<${tag}>`).join('');
+      remaining = reopenPrefix + remaining;
+    }
+  }
+
+  // If we hit the cap, append a truncation notice
+  if (remaining.length > 0 && result.length >= MAX_MESSAGE_PARTS) {
+    const lastIdx = result.length - 1;
+    const truncNotice = '\n\n⚠️ <i>Message truncated (too long)</i>';
+    if (result[lastIdx].length + truncNotice.length <= maxLength) {
+      result[lastIdx] += truncNotice;
+    }
+  }
+
   return result;
 }

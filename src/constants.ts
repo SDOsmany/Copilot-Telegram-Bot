@@ -191,6 +191,9 @@ export const MAX_TOOL_FILE_SIZE_BYTES = 50 * BYTES_PER_MB;
 /** Telegram maximum message length (4096 characters) */
 export const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 
+/** Maximum number of message parts to send for a single response */
+export const MAX_MESSAGE_PARTS = 20;
+
 /** Telegram maximum callback data length (64 bytes) */
 export const TELEGRAM_MAX_CALLBACK_DATA_LENGTH = 64;
 
