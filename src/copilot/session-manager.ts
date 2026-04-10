@@ -87,6 +87,16 @@ export class SessionManager {
   ): Promise<CopilotSession> {
     const user = this.getUserSessions(userId);
     const existing = user.sessions.get(projectPath);
+
+    logger.debug('switchProject lookup', {
+      userId,
+      projectPath,
+      hasExisting: !!existing,
+      hasSystemMessage: !!options.systemMessage,
+      activeProject: user.activeProject,
+      sessionKeys: [...user.sessions.keys()],
+    });
+
     if (existing && !options.systemMessage) {
       user.activeProject = projectPath;
       logger.debug('Session switched to existing project', {

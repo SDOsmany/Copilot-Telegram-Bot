@@ -321,6 +321,7 @@ export function registerCallbacks(
         model,
         tools: tools.all,
         mcpServers: mcpRegistry.getEnabled(),
+        onUserInputRequest: tools.userInputHandler,
       });
 
       userState.setCurrentCwd(user.id, cwd);
