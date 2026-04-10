@@ -83,6 +83,7 @@ const configSchema = z.object({
   LOG_MAX_SIZE: z.string().default('20m'),
   LOG_MAX_FILES: z.string().default('14d'),
   LOG_DATE_PATTERN: z.string().default('YYYY-MM-DD'),
+  LOKI_URL: z.string().optional().default(''),
 
   TELEGRAM_UPDATE_INTERVAL: z.preprocess(
     (val) => {

@@ -206,3 +206,45 @@ Select-String -Path logs\error-*.log -Pattern 'timeout' -CaseSensitive:$false
 ## Next Steps
 
 See `README.md` for complete command documentation and features.
+
+## Optional: Loki Log Aggregation
+
+For queryable, AI-friendly log storage, you can enable the Grafana Loki stack.
+
+### Start Loki + Grafana
+
+```bash
+docker compose -f docker-compose.loki.yml up -d
+```
+
+This starts:
+- **Loki** on `http://localhost:3100` — log storage and query engine
+- **Grafana** on `http://localhost:3000` — web UI (admin/admin)
+
+### Enable log shipping
+
+Add to your `.env`:
+```
+LOKI_URL=http://localhost:3100
+```
+
+Restart the bot. Logs are now shipped to Loki automatically.
+
+### Query logs
+
+Install LogCLI: https://grafana.com/docs/loki/latest/query/logcli/
+
+```bash
+# Recent errors
+logcli query '{app="copilot-bot"} |= "error"' --since=1h
+
+# JSON output (ideal for AI consumption)
+logcli query '{app="copilot-bot"}' --since=30m --output=jsonl
+
+# Filter by level
+logcli query '{app="copilot-bot",level="error"}' --since=24h
+```
+
+Or open Grafana at `http://localhost:3000` and explore in the Loki datasource.
+
+See `docs/loki-querying.md` for a full LogQL cheat sheet.

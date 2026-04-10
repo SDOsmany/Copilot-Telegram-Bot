@@ -3,6 +3,7 @@ import * as fsSync from 'fs';
 import * as path from 'path';
 import { createLogger, format, transports } from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
+import LokiTransport from 'winston-loki';
 import { config } from '../config';
 import { sanitizeForLogging } from './sanitize';
 
@@ -72,6 +73,33 @@ const logFormat = format.printf(({ level, message, timestamp, ...meta }) => {
   return `${timestamp} [${level}]: ${message}${extra}`;
 });
 
+/**
+ * Builds the optional Loki transport when LOKI_URL is configured.
+ * Loki receives structured JSON logs with labels for easy querying via LogQL.
+ */
+function buildLokiTransport(): LokiTransport | null {
+  const lokiUrl = config.LOKI_URL;
+  if (!lokiUrl || isTestEnv) return null;
+
+  return new LokiTransport({
+    host: lokiUrl,
+    labels: {
+      app: 'copilot-bot',
+      env: process.env.NODE_ENV || 'development',
+    },
+    json: true,
+    batching: true,
+    interval: 5,
+    replaceTimestamp: true,
+    onConnectionError: (err: unknown) => {
+      // Log to console only to avoid infinite loop
+      console.error('[winston-loki] Connection error:', err);
+    },
+  });
+}
+
+const lokiTransport = buildLokiTransport();
+
 export const logger = createLogger({
   level: config.LOG_LEVEL,
   format: format.combine(format.timestamp(), logFormat),
@@ -98,5 +126,6 @@ export const logger = createLogger({
           }),
         ]
       : []),
+    ...(lokiTransport ? [lokiTransport] : []),
   ],
 });

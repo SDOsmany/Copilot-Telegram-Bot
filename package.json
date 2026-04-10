@@ -42,8 +42,15 @@
     ".env.example"
   ],
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "node scripts/start.js tsx watch src/index.ts",
+    "start": "node scripts/start.js tsx src/index.ts",
+    "start:bot-only": "tsx src/index.ts",
+    "dev:bot-only": "tsx watch src/index.ts",
+    "loki:start": "docker compose -f docker-compose.loki.yml up -d",
+    "loki:stop": "docker compose -f docker-compose.loki.yml stop",
+    "loki:down": "docker compose -f docker-compose.loki.yml down",
+    "loki:logs": "docker compose -f docker-compose.loki.yml logs -f",
+    "stop": "node scripts/stop.js",
     "build": "tsc && tsc-alias -f -fe .js && node -e \"require('fs').cpSync('src/i18n/locales','dist/i18n/locales',{recursive:true})\"",
     "lint": "eslint src/",
     "test": "vitest run",
@@ -65,6 +72,7 @@
     "grammy": "^1.25.0",
     "winston": "^3.14.0",
     "winston-daily-rotate-file": "^5.0.0",
+    "winston-loki": "^6.1.4",
     "zod": "^3.23.0"
   },
   "devDependencies": {
